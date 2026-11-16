@@ -38,3 +38,12 @@ broadcast/
 .vscode/
 #deps
 .deps/
+
+node_modules/
+.next/
+artifacts/
+cache/
+.env
+.env.local
+.DS_Store
+*.log

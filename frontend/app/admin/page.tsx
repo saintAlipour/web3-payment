@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
-import Link from "next/link";
 
 declare global {
   interface Window {
@@ -10,123 +9,145 @@ declare global {
   }
 }
 
-// ⚠️ آدرس قرارداد جدید خود را اینجا قرار دهید
-const CONTRACT_ADDRESS = "0x4ad325EdD15aEFa1d5385fb0D17ec4D4e89CB9D4";
+// Put your deployed contract address here
+const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 
 const ABI = [
-  "function owner() view returns (address)",
   "function withdrawNative() external",
-  "function withdrawERC20(address tokenAddress) external"
+  "function owner() view returns (address)"
 ];
 
-export default function AdminPanel() {
+export default function AdminPage() {
   const [account, setAccount] = useState("");
-  const [isOwner, setIsOwner] = useState(false);
   const [contractBalance, setContractBalance] = useState("0");
+  const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
 
-  // تابع اتصال کیف پول و بررسی اینکه آیا کاربر مدیر است یا خیر
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
         const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
         setAccount(accounts[0]);
-        
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
-        
-        // گرفتن آدرس مالک قرارداد از بلاک‌چین
-        const ownerAddress = await contract.owner();
-        
-        // بررسی اینکه آیا کیف پول متصل شده همان مالک است
-        if (accounts[0].toLowerCase() === ownerAddress.toLowerCase()) {
-          setIsOwner(true);
-          fetchBalance(provider);
-        } else {
-          setIsOwner(false);
-        }
       } catch (error) {
         console.error("Error connecting:", error);
       }
+    } else {
+      alert("Please install MetaMask!");
     }
   };
 
-  // تابع گرفتن موجودی قرارداد
-  const fetchBalance = async (provider: any) => {
-    const balance = await provider.getBalance(CONTRACT_ADDRESS);
-    setContractBalance(ethers.formatEther(balance));
+  const fetchContractData = async () => {
+    if (!window.ethereum) return;
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      
+      // Get contract balance
+      const balance = await provider.getBalance(CONTRACT_ADDRESS);
+      setContractBalance(ethers.formatEther(balance));
+
+      // Check if the current user is the contract owner
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+      const contractOwner = await contract.owner();
+      
+      if (account.toLowerCase() === contractOwner.toLowerCase()) {
+        setIsOwner(true);
+      } else {
+        setIsOwner(false);
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    }
   };
 
-  // تابع برداشت وجه
+  useEffect(() => {
+    if (account) {
+      fetchContractData();
+    }
+  }, [account]);
+
   const handleWithdraw = async () => {
+    if (!window.ethereum) return;
+
     try {
       setLoading(true);
-      setStatus("در حال ارسال درخواست برداشت...");
-      
+      setStatus("Sending withdrawal transaction...");
+
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
 
       const tx = await contract.withdrawNative();
-      setStatus("در انتظار تایید شبکه...");
-      await tx.wait();
       
-      setStatus("✅ برداشت با موفقیت انجام شد!");
-      fetchBalance(provider); // آپدیت موجودی
+      setStatus("Waiting for confirmation...");
+      await tx.wait();
+
+      setStatus("Withdrawal successful. Funds transferred to owner.");
+      
+      // Update balance after withdrawal
+      fetchContractData();
+      
     } catch (error: any) {
       console.error(error);
-      setStatus(`❌ خطا در برداشت: ${error.reason || "تراکنش ناموفق بود"}`);
+      if (error.code === "ACTION_REJECTED") {
+        setStatus("Transaction rejected by user.");
+      } else {
+        setStatus(`Error: ${error.reason || "Only the owner can withdraw funds."}`);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-slate-900 text-white font-sans">
+    <main className="flex min-h-screen flex-col items-center justify-center p-6 bg-slate-900 text-white font-sans" dir="ltr">
       <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl p-8 border border-slate-700">
-        
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-bold text-red-400">پنل مدیریت</h1>
-          <Link href="/" className="text-sm text-blue-400 hover:underline">
-            بازگشت به درگاه
-          </Link>
-        </div>
+        <h1 className="text-3xl font-bold text-center mb-2 text-red-400">Admin Dashboard</h1>
+        <p className="text-center text-slate-400 mb-8 text-sm">Contract Management</p>
 
         {!account ? (
-          <button 
-            onClick={connectWallet} 
-            className="w-full bg-blue-600 hover:bg-blue-500 transition-colors py-3 rounded-xl font-bold text-lg"
-          >
-            اتصال کیف پول (MetaMask)
+          <button onClick={connectWallet} className="w-full bg-blue-600 hover:bg-blue-500 transition-colors py-3 rounded-xl font-bold text-lg">
+            Connect Wallet (MetaMask)
           </button>
-        ) : !isOwner ? (
-          <div className="text-center p-4 bg-red-900/30 border border-red-500/50 rounded-xl text-red-200">
-            ⛔ شما مالک این قرارداد نیستید. دسترسی ممنوع!
-          </div>
         ) : (
           <div className="space-y-6">
-            <div className="bg-green-900/20 p-4 rounded-xl border border-green-500/30 text-center">
-              <p className="text-sm text-gray-300 mb-2">موجودی قرارداد (ETH)</p>
-              <p className="text-3xl font-bold text-green-400">{contractBalance}</p>
+            <div className="bg-slate-700/50 p-4 rounded-lg text-sm text-center border border-slate-600">
+              <p className="text-slate-400 mb-1">Connected Wallet:</p>
+              <p className="font-mono text-blue-300">{account}</p>
             </div>
 
-            <button 
-              onClick={handleWithdraw} 
-              disabled={loading || contractBalance === "0.0"}
-              className="w-full bg-red-600 hover:bg-red-500 disabled:bg-slate-600 text-white transition-colors py-3 rounded-xl font-bold text-lg"
-            >
-              {loading ? "در حال پردازش..." : "برداشت تمام موجودی به کیف پول من"}
-            </button>
+            <div className="bg-slate-900 p-4 rounded-lg border border-slate-700 text-center">
+              <p className="text-slate-400 text-sm mb-1">Contract Balance</p>
+              <p className="text-3xl font-bold text-green-400">{contractBalance} ETH</p>
+            </div>
+
+            {isOwner ? (
+              <button
+
+onClick={handleWithdraw} 
+                disabled={loading || contractBalance === "0.0"}
+                className="w-full bg-red-500 hover:bg-red-400 disabled:bg-slate-600 text-white transition-colors py-3 rounded-xl font-extrabold text-lg shadow-lg shadow-red-500/30"
+              >
+                {loading ? "Processing..." : "Withdraw Funds"}
+              </button>
+            ) : (
+              <div className="bg-red-900/30 border border-red-500/50 p-4 rounded-lg text-center text-red-300 text-sm">
+                You are not the contract owner. You cannot withdraw funds.
+              </div>
+            )}
 
             {status && (
-              <div className="p-3 rounded-lg bg-slate-900 text-center text-sm border border-slate-700">
+              <div className="mt-4 p-3 rounded-lg bg-slate-900 text-center text-sm border border-slate-700 font-medium">
                 {status}
               </div>
             )}
           </div>
         )}
       </div>
+      
+      <a href="/" className="mt-6 text-blue-400 hover:text-blue-300 text-sm underline">
+        Back to Payment Page
+      </a>
     </main>
   );
 }
